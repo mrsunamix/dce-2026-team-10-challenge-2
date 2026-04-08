@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Morse Transmission</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap');
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: #000;
+      color: #e0f0ff;
+      font-family: 'Share Tech Mono', monospace;
+    }
+
+    /* ── LAYOUT SHELL ─────────────────────────────────────────────────────────── */
+    .shell {
+      width: 100vw;
+      height: 100vh;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      padding: 32px 40px 28px;
+      gap: 0;
+    }
+
+    /* ── TOP: STATUS + COUNTDOWN ──────────────────────────────────────────────── */
+    .top {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 18px;
+    }
+
+    #status-banner {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(10px, 1.4vw, 14px);
+      font-weight: 700;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      padding: 8px 28px;
+      border: 1px solid currentColor;
+      border-radius: 100px;
+      text-align: center;
+      transition: color 0.4s, background 0.4s;
+    }
+    #status-banner.idle       { color: #2a5570; background: transparent; }
+    #status-banner.countdown  { color: #ffdd44; background: rgba(60,50,0,0.4); }
+    #status-banner.active     { color: #44ffaa; background: rgba(0,60,30,0.3); }
+    #status-banner.laser_lost { color: #ff4444; background: rgba(60,0,0,0.4); animation: pulse-red 0.6s infinite alternate; }
+    @keyframes pulse-red { to { background: rgba(100,0,0,0.6); } }
+
+    #countdown-num {
+      font-family: 'Orbitron', sans-serif;
+      font-size: clamp(60px, 12vw, 130px);
+      font-weight: 900;
+      line-height: 1;
+      opacity: 0;
+      transform: scale(0.75);
+      transition: opacity 0.12s, transform 0.12s;
+      text-shadow: 0 0 60px currentColor;
+      min-height: clamp(70px, 13vw, 140px);
+      display: flex;
+      align-items: center;
+    }
+    #countdown-num.visible { opacity: 1; transform: scale(1); }
+    #countdown-num.warning { color: #ff4444; }
+    #countdown-num.ok      { color: #ffdd44; }
+
+    /* ── MIDDLE: STAY SEQUENCE ────────────────────────────────────────────────── */
+    .middle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #sequence-display {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(20px, 4vw, 56px);
+    }
+
+    /* Each letter as a pill card showing only dot/dash symbols */
+    .seq-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      border: 1px solid #1a3a5a;
+      border-radius: 100px;
+      padding: clamp(22px, 3vw, 36px) clamp(18px, 2.5vw, 28px);
+      background: rgba(0, 8, 20, 0.7);
+      transition: border-color 0.4s, background 0.4s, box-shadow 0.4s;
+      min-width: clamp(70px, 9vw, 110px);
+    }
+
+    .seq-block.sent {
+      border-color: #44ffaa;
+      background: rgba(0, 35, 20, 0.5);
+      box-shadow: 0 0 28px #44ff8830, inset 0 0 20px #44ff8808;
+    }
+
+    .seq-block.active-input {
+      border-color: #ffdd44;
+      box-shadow: 0 0 22px #ffdd4430;
+    }
+
+    /* Dots & dashes as shapes */
+    .sym-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: clamp(5px, 0.8vw, 9px);
+      flex-wrap: nowrap;
+    }
+
+    .sym {
+      display: inline-block;
+      background: #3a6a8a;
+      border-radius: 50px;
+      transition: background 0.4s;
+      flex-shrink: 0;
+    }
+    .seq-block.sent .sym         { background: #44ffaa; }
+    .seq-block.active-input .sym { background: #ffdd44; }
+
+    .sym.dot {
+      width:  clamp(10px, 1.4vw, 16px);
+      height: clamp(10px, 1.4vw, 16px);
+      border-radius: 50%;
+    }
+    .sym.dash {
+      width:  clamp(26px, 3.8vw, 46px);
+      height: clamp(10px, 1.4vw, 16px);
+    }
+
+    /* Tiny notation below symbols */
+    .seq-label {
+      font-size: clamp(9px, 1vw, 11px);
+      letter-spacing: 3px;
+      color: #1e4a6a;
+      font-family: 'Share Tech Mono', monospace;
+      transition: color 0.4s;
+    }
+    .seq-block.sent .seq-label         { color: #2a7a5a; }
+    .seq-block.active-input .seq-label { color: #aa9922; }
+
+    /* waiting placeholder */
+    .waiting-text {
+      color: #112233;
+      letter-spacing: 5px;
+      font-size: clamp(10px, 1.3vw, 13px);
+      text-transform: uppercase;
+    }
+
+    /* ── BOTTOM: LDR ─────────────────────────────────────────────────────────── */
+    .bottom {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .ldr-label {
+      font-size: 10px;
+      letter-spacing: 3px;
+      color: #1e3a4a;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    #ldr-bar-bg {
+      flex: 1;
+      height: 3px;
+      background: rgba(255,255,255,0.04);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    #ldr-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #1a3a5a, #336688);
+      border-radius: 3px;
+      transition: width 0.3s, background 0.3s;
+    }
+    #ldr-bar-fill.laser {
+      background: linear-gradient(90deg, #003322, #44ffaa);
+    }
+
+    #ldr-value {
+      font-size: 10px;
+      color: #1e3a4a;
+      white-space: nowrap;
+      min-width: 52px;
+      text-align: right;
+      transition: color 0.3s;
+    }
+    #ldr-value.laser { color: #44ffaa; }
+
+    /* ── CONN DOT ─────────────────────────────────────────────────────────────── */
+    #conn-status {
+      position: fixed;
+      bottom: 10px;
+      right: 16px;
+      font-size: 9px;
+      letter-spacing: 2px;
+      color: #112233;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #conn-dot {
+      width: 5px; height: 5px;
+      border-radius: 50%;
+      background: #112233;
+      transition: background 0.3s;
+    }
+    #conn-dot.connected { background: #44ffaa; }
+  </style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- TOP -->
+  <div class="top">
+    <div id="status-banner" class="idle">Awaiting laser signal</div>
+    <div id="countdown-num">3</div>
+  </div>
+
+  <!-- MIDDLE -->
+  <div class="middle">
+    <div id="sequence-display">
+      <span class="waiting-text">— aim laser to begin —</span>
+    </div>
+  </div>
+
+  <!-- BOTTOM -->
+  <div class="bottom">
+    <span class="ldr-label">Laser</span>
+    <div id="ldr-bar-bg"><div id="ldr-bar-fill"></div></div>
+    <span id="ldr-value">0.00 V</span>
+  </div>
+
+</div>
+
+<div id="conn-status"><span id="conn-dot"></span>OOCSI</div>
+
+<script src="https://cdn.jsdelivr.net/gh/iddi/oocsi-websocket@master/dist/oocsi-web.js"></script>
+<script>
+// ── Morse map ─────────────────────────────────────────────────────────────────
+const MORSE = {
+  A:'·−', B:'−···', C:'−·−·', D:'−··',  E:'·',
+  F:'··−·', G:'−−·', H:'····', I:'··',  J:'·−−−',
+  K:'−·−', L:'·−··', M:'−−',  N:'−·',  O:'−−−',
+  P:'·−−·', Q:'−−·−', R:'·−·', S:'···', T:'−',
+  U:'··−', V:'···−', W:'·−−', X:'−··−', Y:'−·−−',
+  Z:'−−··'
+};
+
+// ── Fixed STAY sequence ───────────────────────────────────────────────────────
+const SEQUENCE = ['S','T','A','Y'];
+let sentCount = 0;
+
+function morseToSymbols(code) {
+  const row = document.createElement('div');
+  row.className = 'sym-row';
+  code.split('').forEach(ch => {
+    const s = document.createElement('span');
+    s.className = 'sym ' + (ch === '·' ? 'dot' : 'dash');
+    row.appendChild(s);
+  });
+  return row;
+}
+
+function renderSequence(activeIndex = -1) {
+  const el = document.getElementById('sequence-display');
+  el.innerHTML = '';
+  SEQUENCE.forEach((letter, i) => {
+    const block = document.createElement('div');
+    block.className = 'seq-block'
+      + (i < sentCount     ? ' sent'         : '')
+      + (i === activeIndex ? ' active-input'  : '');
+    block.id = 'seq-' + i;
+
+    block.appendChild(morseToSymbols(MORSE[letter]));
+
+    const label = document.createElement('div');
+    label.className = 'seq-label';
+    label.textContent = MORSE[letter];
+    block.appendChild(label);
+
+    el.appendChild(block);
+  });
+}
+
+function resetSequence() { sentCount = 0; }
+
+function markNextSent() {
+  if (sentCount < SEQUENCE.length) { sentCount++; renderSequence(); }
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const BANNER = {
+  idle:       'Awaiting laser signal',
+  countdown:  'Laser locked — stand by',
+  active:     'Transmit the sequence',
+  laser_lost: '⚠ Laser lost — re-aim now',
+};
+
+function applyState(s) {
+  const banner = document.getElementById('status-banner');
+  banner.textContent = BANNER[s] || s;
+  banner.className   = s;
+
+  if (s === 'idle') {
+    document.getElementById('countdown-num').classList.remove('visible');
+    document.getElementById('sequence-display').innerHTML =
+      '<span class="waiting-text">— aim laser to begin —</span>';
+    resetSequence();
+  }
+  if (s === 'active') {
+    document.getElementById('countdown-num').classList.remove('visible');
+    resetSequence();
+    renderSequence();
+  }
+}
+
+// ── Countdown ─────────────────────────────────────────────────────────────────
+let cdTimer;
+function showCountdown(n) {
+  const el = document.getElementById('countdown-num');
+  el.textContent = n;
+  el.className   = (n <= 1 ? 'warning' : 'ok');
+  el.classList.add('visible');
+  clearTimeout(cdTimer);
+  cdTimer = setTimeout(() => el.classList.remove('visible'), 850);
+}
+
+// ── LDR ───────────────────────────────────────────────────────────────────────
+function updateLDR(v) {
+  const fill  = document.getElementById('ldr-bar-fill');
+  const label = document.getElementById('ldr-value');
+  const on    = v >= 2.5;
+  fill.style.width = Math.min(100, (v / 3.3) * 100) + '%';
+  fill.classList.toggle('laser', on);
+  label.textContent = v.toFixed(2) + ' V';
+  label.classList.toggle('laser', on);
+}
+
+// ── Letter received ───────────────────────────────────────────────────────────
+let inputTimer;
+function onLetterReceived(letter) {
+  markNextSent();
+  clearTimeout(inputTimer);
+  const idx = sentCount - 1;
+  renderSequence(idx);
+  inputTimer = setTimeout(() => renderSequence(), 1200);
+}
+
+// ── Message router ────────────────────────────────────────────────────────────
+function handleMessage(msg) {
+  const d = msg.data;
+  if (d.game_state !== undefined) applyState(d.game_state);
+  if (d.countdown  !== undefined) showCountdown(d.countdown);
+  if (d.ldr        !== undefined) updateLDR(parseFloat(d.ldr));
+  if (d.letter     !== undefined) onLetterReceived(d.letter);
+}
+
+// ── Connection ────────────────────────────────────────────────────────────────
+let connTimer;
+function setConnected(on) {
+  document.getElementById('conn-dot').classList.toggle('connected', on);
+}
+
+OOCSI.connect('wss://oocsi.id.tue.nl/ws');
+OOCSI.subscribe('OOCSI-things/team-10', function(msg) {
+  handleMessage(msg);
+  setConnected(true);
+  clearTimeout(connTimer);
+  connTimer = setTimeout(() => setConnected(false), 5000);
+});
+</script>
+</body>
+</html>
